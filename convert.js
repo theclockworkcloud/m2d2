@@ -53,7 +53,7 @@ const STYLES = {
     companyName: "RenewCORP Pty Ltd",
     coverImage: "assets/renewcorp-cover.png",
     headerLogo: "assets/renewcorp-logo.png",
-    headerLogoWidth: 130,
+    headerLogoWidth: 228,
     headerLogoHeight: 35,
     coverImageWidth: 600,
     coverImageHeight: 340,
