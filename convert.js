@@ -51,6 +51,12 @@ const STYLES = {
     paraAfter: 160,
     footerText: "Commercial in Confidence",
     companyName: "RenewCORP Pty Ltd",
+    coverImage: "assets/renewcorp-cover.png",
+    headerLogo: "assets/renewcorp-logo.png",
+    headerLogoWidth: 130,
+    headerLogoHeight: 35,
+    coverImageWidth: 600,
+    coverImageHeight: 340,
   },
   clockwork: {
     name: "The Clockwork Cloud",
@@ -76,8 +82,27 @@ const STYLES = {
     paraAfter: 160,
     footerText: "Commercial in Confidence",
     companyName: "The Clockwork Cloud",
+    coverImage: null,
+    headerLogo: null,
+    headerLogoWidth: 130,
+    headerLogoHeight: 35,
+    coverImageWidth: 600,
+    coverImageHeight: 340,
   },
 };
+
+// ── IMAGE LOADING ─────────────────────────────────────────────
+
+function loadImage(relativePath) {
+  if (!relativePath) return null;
+  try {
+    const fullPath = path.join(__dirname, relativePath);
+    if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
+      return fs.readFileSync(fullPath);
+    }
+  } catch {}
+  return null;
+}
 
 // ── CLI ARGUMENT PARSING ───────────────────────────────────────
 
@@ -186,13 +211,13 @@ function inlineToRuns(tokens, style, baseOpts = {}) {
         break;
 
       case "link":
-        runs.push(new TextRun({
-          text: token.text || token.href,
-          font: style.font,
-          size: style.bodySize,
-          color: style.colors.link,
-          underline: { type: "single" },
-          ...baseOpts,
+        runs.push(new ExternalHyperlink({
+          link: token.href,
+          children: inlineToRuns(token.tokens || [{ type: "text", text: token.text || token.href }], style, {
+            ...baseOpts,
+            color: style.colors.link,
+            underline: { type: "single" },
+          }),
         }));
         break;
 
@@ -230,6 +255,7 @@ function inlineToRuns(tokens, style, baseOpts = {}) {
 
 function tokensToDocxElements(tokens, style, numbConfig) {
   const elements = [];
+  let firstH1Seen = false;
 
   for (const token of tokens) {
     switch (token.type) {
@@ -246,6 +272,10 @@ function tokensToDocxElements(tokens, style, numbConfig) {
         const headingSize = style.headingSizes[sizeKeys[Math.min(level - 1, 3)]] || style.bodySize;
         const headingColor = style.colors[colorKeys[Math.min(level - 1, 3)]] || undefined;
 
+        const isH1 = level === 1;
+        const usePageBreak = isH1 && firstH1Seen;
+        if (isH1) firstH1Seen = true;
+
         const runs = inlineToRuns(token.tokens, style, {
           bold: true,
           size: headingSize,
@@ -254,6 +284,9 @@ function tokensToDocxElements(tokens, style, numbConfig) {
 
         elements.push(new Paragraph({
           heading: headingLevels[Math.min(level - 1, 5)],
+          keepNext: true,
+          keepLines: true,
+          pageBreakBefore: usePageBreak,
           children: runs,
         }));
         break;
@@ -308,6 +341,8 @@ function tokensToDocxElements(tokens, style, numbConfig) {
         for (const line of lines) {
           elements.push(new Paragraph({
             spacing: { after: 0 },
+            keepNext: true,
+            keepLines: true,
             shading: { type: ShadingType.CLEAR, fill: style.colors.codeBg },
             children: [
               new TextRun({
@@ -435,13 +470,50 @@ function createTable(token, style) {
 
 // ── DOCUMENT ASSEMBLY ──────────────────────────────────────────
 
+function buildHeader(style) {
+  const logoData = loadImage(style.headerLogo);
+  if (logoData) {
+    return new Header({
+      children: [new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        spacing: { after: 0 },
+        children: [new ImageRun({
+          data: logoData,
+          transformation: { width: style.headerLogoWidth || 130, height: style.headerLogoHeight || 35 },
+          type: "png",
+        })],
+      })],
+    });
+  }
+  return new Header({ children: [new Paragraph({ children: [] })] });
+}
+
 function buildDocument(elements, style, opts) {
   const children = [];
 
   // Cover page
   if (opts.cover) {
+    const coverImg = loadImage(style.coverImage);
+    if (coverImg) {
+      children.push(new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 400 },
+        children: [new ImageRun({
+          data: coverImg,
+          transformation: { width: style.coverImageWidth || 600, height: style.coverImageHeight || 340 },
+          type: "png",
+        })],
+      }));
+      // Less vertical spacing when image is present
+      children.push(
+        new Paragraph({ spacing: { after: 60 }, children: [] }),
+        new Paragraph({ spacing: { after: 60 }, children: [] }),
+      );
+    } else {
+      // No image — push title down the page
+      children.push(...Array(8).fill(null).map(() => new Paragraph({ spacing: { after: 60 }, children: [] })));
+    }
     children.push(
-      ...Array(8).fill(null).map(() => new Paragraph({ spacing: { after: 60 }, children: [] })),
       new Paragraph({
         alignment: AlignmentType.CENTER, spacing: { after: 300 },
         children: [new TextRun({ text: opts.cover, bold: true, color: style.colors.h1, size: 52, font: style.font })],
@@ -487,22 +559,22 @@ function buildDocument(elements, style, opts) {
         {
           id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
           run: { size: style.headingSizes.h1, bold: true, font: style.font, color: style.colors.h1 || undefined },
-          paragraph: { spacing: { before: 240, after: 160 }, outlineLevel: 0 },
+          paragraph: { spacing: { before: 360, after: 200 }, keepNext: true, keepLines: true, outlineLevel: 0 },
         },
         {
           id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
           run: { size: style.headingSizes.h2, bold: true, font: style.font, color: style.colors.h2 || undefined },
-          paragraph: { spacing: { before: 200, after: 120 }, outlineLevel: 1 },
+          paragraph: { spacing: { before: 280, after: 140 }, keepNext: true, keepLines: true, outlineLevel: 1 },
         },
         {
           id: "Heading3", name: "Heading 3", basedOn: "Normal", next: "Normal", quickFormat: true,
           run: { size: style.headingSizes.h3, bold: true, font: style.font, color: style.colors.h3 || undefined },
-          paragraph: { spacing: { before: 200, after: 120 }, outlineLevel: 2 },
+          paragraph: { spacing: { before: 240, after: 120 }, keepNext: true, keepLines: true, outlineLevel: 2 },
         },
         {
           id: "Heading4", name: "Heading 4", basedOn: "Normal", next: "Normal", quickFormat: true,
           run: { size: style.headingSizes.h4, bold: true, font: style.font, color: style.colors.h4 || undefined },
-          paragraph: { spacing: { before: 160, after: 80 }, outlineLevel: 3 },
+          paragraph: { spacing: { before: 200, after: 80 }, keepNext: true, keepLines: true, outlineLevel: 3 },
         },
       ],
     },
@@ -539,7 +611,7 @@ function buildDocument(elements, style, opts) {
         titlePage: !!opts.cover,
       },
       headers: {
-        default: new Header({ children: [new Paragraph({ children: [] })] }),
+        default: buildHeader(style),
         first: new Header({ children: [new Paragraph({ children: [] })] }),
       },
       footers: {
@@ -551,6 +623,8 @@ function buildDocument(elements, style, opts) {
                 new TextRun({ text: `${style.footerText}  |  `, size: 16, color: style.colors.muted, font: style.font }),
                 new TextRun({ text: "Page ", size: 16, color: style.colors.muted, font: style.font }),
                 new TextRun({ children: [PageNumber.CURRENT], size: 16, color: style.colors.muted, font: style.font }),
+                new TextRun({ text: " of ", size: 16, color: style.colors.muted, font: style.font }),
+                new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 16, color: style.colors.muted, font: style.font }),
               ],
             }),
           ],

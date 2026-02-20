@@ -7,3 +7,5 @@ node_modules/
 # Keep reference files in non dev files
 !non dev files/
 !non dev files/**
+
+.vercel
