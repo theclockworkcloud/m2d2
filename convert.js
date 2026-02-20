@@ -21,7 +21,8 @@ const {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
   Header, Footer, AlignmentType, LevelFormat, ExternalHyperlink,
   ImageRun, TableOfContents, HeadingLevel, BorderStyle, WidthType,
-  ShadingType, VerticalAlign, PageNumber, PageBreak
+  ShadingType, VerticalAlign, PageNumber, PageBreak,
+  HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom, TextWrappingType
 } = require("docx");
 
 // ── STYLE DEFINITIONS ──────────────────────────────────────────
@@ -57,6 +58,12 @@ const STYLES = {
     headerLogoHeight: 35,
     coverImageWidth: 600,
     coverImageHeight: 340,
+    preparedBy: {
+      name: "Alexander Hender",
+      title: "Head of Sustainability and Technology, RenewCORP",
+      phone: "+61 0422 449 068",
+      email: "alexh@renewcorp.com.au",
+    },
   },
   clockwork: {
     name: "The Clockwork Cloud",
@@ -101,6 +108,13 @@ function loadImage(relativePath) {
       return fs.readFileSync(fullPath);
     }
   } catch {}
+  return null;
+}
+
+function getPngDimensions(buffer) {
+  if (buffer && buffer.length > 24 && buffer[0] === 0x89 && buffer[1] === 0x50) {
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  }
   return null;
 }
 
@@ -470,6 +484,13 @@ function createTable(token, style) {
 
 // ── DOCUMENT ASSEMBLY ──────────────────────────────────────────
 
+// A4 dimensions
+const PAGE_WIDTH = 11906;  // DXA
+const PAGE_HEIGHT = 16838; // DXA
+const PAGE_WIDTH_PX = 794; // pixels at 96 DPI
+const EMU_PER_INCH = 914400;
+const EMU_PER_DXA = 635;
+
 function buildHeader(style) {
   const logoData = loadImage(style.headerLogo);
   if (logoData) {
@@ -479,7 +500,7 @@ function buildHeader(style) {
         spacing: { after: 0 },
         children: [new ImageRun({
           data: logoData,
-          transformation: { width: style.headerLogoWidth || 130, height: style.headerLogoHeight || 35 },
+          transformation: { width: style.headerLogoWidth || 228, height: style.headerLogoHeight || 35 },
           type: "png",
         })],
       })],
@@ -488,52 +509,207 @@ function buildHeader(style) {
   return new Header({ children: [new Paragraph({ children: [] })] });
 }
 
-function buildDocument(elements, style, opts) {
+function buildCoverSection(style, opts) {
   const children = [];
+  const coverImg = loadImage(style.coverImage);
+  const logoImg = loadImage(style.headerLogo);
 
-  // Cover page
-  if (opts.cover) {
-    const coverImg = loadImage(style.coverImage);
-    if (coverImg) {
-      children.push(new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 400 },
-        children: [new ImageRun({
-          data: coverImg,
-          transformation: { width: style.coverImageWidth || 600, height: style.coverImageHeight || 340 },
-          type: "png",
-        })],
-      }));
-      // Less vertical spacing when image is present
-      children.push(
-        new Paragraph({ spacing: { after: 60 }, children: [] }),
-        new Paragraph({ spacing: { after: 60 }, children: [] }),
-      );
-    } else {
-      // No image — push title down the page
-      children.push(...Array(8).fill(null).map(() => new Paragraph({ spacing: { after: 60 }, children: [] })));
+  // Compute cover image display dimensions (full page width, maintain aspect ratio)
+  let coverDisplayW = PAGE_WIDTH_PX;
+  let coverDisplayH = 344; // sensible default
+  if (coverImg) {
+    const dims = getPngDimensions(coverImg);
+    if (dims) {
+      coverDisplayH = Math.round(coverDisplayW * dims.height / dims.width);
     }
+  }
+
+  // Compute logo display dimensions (large for cover page)
+  let logoDisplayW = 350;
+  let logoDisplayH = 54;
+  if (logoImg) {
+    const dims = getPngDimensions(logoImg);
+    if (dims) {
+      logoDisplayH = Math.round(logoDisplayW * dims.height / dims.width);
+    }
+  }
+
+  // Position the cover image: starts ~1.8 inches from top (below logo area)
+  const coverTopEmu = Math.round(1.8 * EMU_PER_INCH);
+
+  // 1. Top padding
+  children.push(new Paragraph({ spacing: { before: 600, after: 0 }, children: [] }));
+
+  // 2. Logo (large, left-aligned with indent to simulate margin)
+  if (logoImg) {
+    children.push(new Paragraph({
+      indent: { left: 720 },
+      spacing: { after: 300 },
+      children: [new ImageRun({
+        data: logoImg,
+        transformation: { width: logoDisplayW, height: logoDisplayH },
+        type: "png",
+      })],
+    }));
+  } else {
+    children.push(new Paragraph({
+      indent: { left: 720 },
+      spacing: { after: 300 },
+      children: [new TextRun({ text: style.companyName, bold: true, size: 44, color: style.colors.h1, font: style.font })],
+    }));
+  }
+
+  // 3. Floating cover image (behind document, edge-to-edge)
+  if (coverImg) {
+    children.push(new Paragraph({
+      spacing: { after: 0 },
+      children: [new ImageRun({
+        data: coverImg,
+        transformation: { width: coverDisplayW, height: coverDisplayH },
+        type: "png",
+        floating: {
+          horizontalPosition: {
+            relative: HorizontalPositionRelativeFrom.PAGE,
+            offset: 0,
+          },
+          verticalPosition: {
+            relative: VerticalPositionRelativeFrom.PAGE,
+            offset: coverTopEmu,
+          },
+          wrap: { type: TextWrappingType.NONE },
+          behindDocument: true,
+        },
+      })],
+    }));
+  }
+
+  // 4. Spacing to push title into the image area
+  children.push(new Paragraph({ spacing: { before: 1500, after: 0 }, children: [] }));
+
+  // 5. Title text (white bold, centered — appears over the cover image)
+  const titleColor = coverImg ? "FFFFFF" : style.colors.h1;
+  children.push(new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { before: 200, after: 200 },
+    children: [new TextRun({
+      text: opts.cover,
+      bold: true,
+      color: titleColor,
+      size: 48,
+      font: style.font,
+    })],
+  }));
+
+  // 6. Spacing to push prepared-by block down
+  const spacerCount = style.preparedBy ? 2 : 6;
+  for (let i = 0; i < spacerCount; i++) {
+    children.push(new Paragraph({ spacing: { before: 1000, after: 0 }, children: [] }));
+  }
+
+  // 7. "Prepared by" block at bottom (with indent for margin)
+  const pb = style.preparedBy;
+  if (pb) {
     children.push(
       new Paragraph({
-        alignment: AlignmentType.CENTER, spacing: { after: 300 },
-        children: [new TextRun({ text: opts.cover, bold: true, color: style.colors.h1, size: 52, font: style.font })],
+        indent: { left: 720 },
+        spacing: { after: 40 },
+        children: [new TextRun({ text: "Prepared by:", bold: true, size: 22, font: style.font })],
       }),
       new Paragraph({
-        alignment: AlignmentType.CENTER, spacing: { after: 120 },
-        children: [new TextRun({ text: style.companyName, color: style.colors.muted, size: 28, font: style.font })],
+        indent: { left: 720 },
+        spacing: { after: 40 },
+        children: [new TextRun({ text: pb.name, size: 22, font: style.font })],
       }),
       new Paragraph({
-        alignment: AlignmentType.CENTER, spacing: { after: 120 },
+        indent: { left: 720 },
+        spacing: { after: 40 },
+        children: [new TextRun({ text: pb.title, size: 22, font: style.font })],
+      }),
+      new Paragraph({
+        indent: { left: 720 },
+        spacing: { after: 40 },
+        children: [
+          new TextRun({ text: "P: ", bold: true, size: 22, font: style.font }),
+          new TextRun({ text: pb.phone, size: 22, font: style.font }),
+        ],
+      }),
+      new Paragraph({
+        indent: { left: 720 },
+        spacing: { after: 40 },
+        children: [
+          new TextRun({ text: "E: ", bold: true, size: 22, font: style.font }),
+          new ExternalHyperlink({
+            link: `mailto:${pb.email}`,
+            children: [new TextRun({ text: pb.email, size: 22, font: style.font, color: style.colors.link, underline: { type: "single" } })],
+          }),
+        ],
+      }),
+      new Paragraph({
+        indent: { left: 720 },
+        spacing: { after: 120 },
         children: [new TextRun({
           text: new Date().toLocaleDateString("en-AU", { year: "numeric", month: "long", day: "numeric" }),
-          color: style.colors.muted, size: 24, font: style.font,
+          size: 22, font: style.font,
         })],
       }),
-      new Paragraph({ children: [new PageBreak()] }),
+    );
+  } else {
+    children.push(
+      new Paragraph({
+        indent: { left: 720 },
+        spacing: { after: 60 },
+        children: [new TextRun({ text: style.companyName, size: 22, color: style.colors.muted, font: style.font })],
+      }),
+      new Paragraph({
+        indent: { left: 720 },
+        spacing: { after: 120 },
+        children: [new TextRun({
+          text: new Date().toLocaleDateString("en-AU", { year: "numeric", month: "long", day: "numeric" }),
+          size: 22, color: style.colors.muted, font: style.font,
+        })],
+      }),
     );
   }
 
-  // Table of Contents
+  // 8. Spacing to push "Commercial in Confidence" to bottom
+  for (let i = 0; i < 6; i++) {
+    children.push(new Paragraph({ spacing: { before: 200, after: 0 }, children: [] }));
+  }
+
+  // 9. "Commercial in Confidence" centered at bottom (red)
+  children.push(new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { before: 200 },
+    children: [new TextRun({
+      text: style.footerText,
+      bold: true,
+      size: 22,
+      font: style.font,
+      color: "EE0000",
+    })],
+  }));
+
+  return {
+    properties: {
+      page: {
+        size: { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+        margin: { top: 0, right: 0, bottom: 360, left: 0, header: 0, footer: 0, gutter: 0 },
+      },
+    },
+    headers: {
+      default: new Header({ children: [new Paragraph({ children: [] })] }),
+    },
+    footers: {
+      default: new Footer({ children: [new Paragraph({ children: [] })] }),
+    },
+    children,
+  };
+}
+
+function buildContentSection(elements, style, opts) {
+  const children = [];
+
+  // Table of Contents (if enabled)
   if (opts.toc) {
     children.push(
       new Paragraph({
@@ -547,6 +723,45 @@ function buildDocument(elements, style, opts) {
 
   // Main content
   children.push(...elements);
+
+  return {
+    properties: {
+      page: {
+        size: { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+        margin: { top: 1440, right: 1440, bottom: 1440, left: 1440, header: 708, footer: 708, gutter: 0 },
+      },
+    },
+    headers: {
+      default: buildHeader(style),
+    },
+    footers: {
+      default: new Footer({
+        children: [
+          new Paragraph({
+            border: { top: { style: BorderStyle.SINGLE, size: 12, color: style.colors.border, space: 4 } },
+            children: [
+              new TextRun({ text: `${style.footerText}  |  `, size: 16, color: style.colors.muted, font: style.font }),
+              new TextRun({ text: "Page ", size: 16, color: style.colors.muted, font: style.font }),
+              new TextRun({ children: [PageNumber.CURRENT], size: 16, color: style.colors.muted, font: style.font }),
+              new TextRun({ text: " of ", size: 16, color: style.colors.muted, font: style.font }),
+              new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 16, color: style.colors.muted, font: style.font }),
+            ],
+          }),
+        ],
+      }),
+    },
+    children,
+  };
+}
+
+function buildDocument(elements, style, opts) {
+  const sections = [];
+
+  if (opts.cover) {
+    sections.push(buildCoverSection(style, opts));
+  }
+
+  sections.push(buildContentSection(elements, style, opts));
 
   return new Document({
     styles: {
@@ -602,39 +817,7 @@ function buildDocument(elements, style, opts) {
         },
       ],
     },
-    sections: [{
-      properties: {
-        page: {
-          size: { width: 11906, height: 16838 },
-          margin: { top: 1440, right: 1440, bottom: 1440, left: 1440, header: 708, footer: 708, gutter: 0 },
-        },
-        titlePage: !!opts.cover,
-      },
-      headers: {
-        default: buildHeader(style),
-        first: new Header({ children: [new Paragraph({ children: [] })] }),
-      },
-      footers: {
-        default: new Footer({
-          children: [
-            new Paragraph({
-              border: { top: { style: BorderStyle.SINGLE, size: 12, color: style.colors.border, space: 4 } },
-              children: [
-                new TextRun({ text: `${style.footerText}  |  `, size: 16, color: style.colors.muted, font: style.font }),
-                new TextRun({ text: "Page ", size: 16, color: style.colors.muted, font: style.font }),
-                new TextRun({ children: [PageNumber.CURRENT], size: 16, color: style.colors.muted, font: style.font }),
-                new TextRun({ text: " of ", size: 16, color: style.colors.muted, font: style.font }),
-                new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 16, color: style.colors.muted, font: style.font }),
-              ],
-            }),
-          ],
-        }),
-        first: opts.cover
-          ? new Footer({ children: [new Paragraph({ children: [] })] })
-          : undefined,
-      },
-      children,
-    }],
+    sections,
   });
 }
 
