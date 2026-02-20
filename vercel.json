@@ -1,0 +1,11 @@
+{
+  "rewrites": [
+    { "source": "/api/styles", "destination": "/api/styles" },
+    { "source": "/api/convert", "destination": "/api/convert" }
+  ],
+  "functions": {
+    "api/convert.js": {
+      "maxDuration": 15
+    }
+  }
+}

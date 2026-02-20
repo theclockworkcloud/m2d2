@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>M2D2</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'><text y='32' font-size='32'>🤖</text></svg>">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f8f9fa;
+      --card: #ffffff;
+      --border: #dee2e6;
+      --text: #212529;
+      --muted: #6c757d;
+      --accent: #1B96A0;
+      --accent-hover: #167a82;
+      --success: #198754;
+      --error: #dc3545;
+      --radius: 8px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.25rem;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 0.875rem;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      width: 100%;
+      max-width: 560px;
+      margin-bottom: 1rem;
+    }
+
+    /* ── Drop zone ─────────────────────────────────── */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: #f0fafa;
+    }
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .drop-zone .icon {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      display: block;
+      color: var(--muted);
+    }
+    .drop-zone .label {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .drop-zone .label strong {
+      color: var(--accent);
+    }
+    .file-name {
+      margin-top: 0.75rem;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--accent);
+      word-break: break-all;
+    }
+
+    /* ── Options ────────────────────────────────────── */
+    .options { display: flex; flex-direction: column; gap: 1rem; }
+
+    label.option {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    label.option input[type="checkbox"] {
+      width: 1rem;
+      height: 1rem;
+      accent-color: var(--accent);
+    }
+
+    .field-label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.35rem;
+    }
+
+    select, input[type="text"] {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.9rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--card);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    select:focus, input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    .cover-title-row {
+      display: none;
+      margin-top: 0.5rem;
+    }
+    .cover-title-row.visible { display: block; }
+
+    /* ── Convert button ────────────────────────────── */
+    .convert-btn {
+      width: 100%;
+      max-width: 560px;
+      padding: 0.75rem;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .convert-btn:hover:not(:disabled) { background: var(--accent-hover); }
+    .convert-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* ── Status ─────────────────────────────────────── */
+    .status {
+      max-width: 560px;
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius);
+      font-size: 0.875rem;
+      margin-top: 0.75rem;
+      display: none;
+    }
+    .status.show { display: block; }
+    .status.info { background: #e7f5ff; color: #1971c2; }
+    .status.success { background: #ebfbee; color: var(--success); }
+    .status.error { background: #fff5f5; color: var(--error); }
+
+    /* ── Preview area ──────────────────────────────── */
+    .preview-toggle {
+      font-size: 0.8rem;
+      color: var(--accent);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      margin-top: 0.5rem;
+      text-decoration: underline;
+    }
+    .preview-area {
+      display: none;
+      margin-top: 0.75rem;
+      max-height: 300px;
+      overflow-y: auto;
+      background: #f8f9fa;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.75rem;
+      font-family: "Consolas", "Courier New", monospace;
+      font-size: 0.8rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text);
+    }
+    .preview-area.show { display: block; }
+  </style>
+</head>
+<body>
+
+  <div class="logo-row">
+    <!-- M2D2 logo: cute droid with a document slot -->
+    <svg width="44" height="44" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- Body -->
+      <rect x="8" y="14" width="28" height="22" rx="6" fill="#1B96A0"/>
+      <!-- Head dome -->
+      <path d="M12 14 C12 6, 32 6, 32 14" fill="#167a82"/>
+      <rect x="12" y="12" width="20" height="4" rx="2" fill="#1B96A0"/>
+      <!-- Eye (lens) -->
+      <circle cx="22" cy="10" r="3.5" fill="#e7f5ff" stroke="#0e5f66" stroke-width="1"/>
+      <circle cx="22" cy="10" r="1.5" fill="#0e5f66"/>
+      <!-- Body panel lines -->
+      <rect x="12" y="20" width="20" height="1" rx="0.5" fill="#0e5f66" opacity="0.3"/>
+      <rect x="12" y="28" width="20" height="1" rx="0.5" fill="#0e5f66" opacity="0.3"/>
+      <!-- Document slot -->
+      <rect x="16" y="22" width="12" height="5" rx="1" fill="#e7f5ff"/>
+      <rect x="18" y="23.5" width="5" height="0.8" rx="0.4" fill="#1B96A0" opacity="0.5"/>
+      <rect x="18" y="25" width="7" height="0.8" rx="0.4" fill="#1B96A0" opacity="0.5"/>
+      <!-- Feet -->
+      <rect x="10" y="36" width="8" height="4" rx="2" fill="#167a82"/>
+      <rect x="26" y="36" width="8" height="4" rx="2" fill="#167a82"/>
+      <!-- Antenna -->
+      <line x1="22" y1="6" x2="22" y2="2" stroke="#0e5f66" stroke-width="1.2"/>
+      <circle cx="22" cy="1.5" r="1.5" fill="#e7f5ff"/>
+    </svg>
+    <h1>M2D2</h1>
+  </div>
+  <p class="subtitle">Markdown to styled Word document</p>
+
+  <!-- File input -->
+  <div class="card">
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept=".md,.markdown,.txt">
+      <span class="icon">&#128196;</span>
+      <span class="label">Drop a <strong>.md</strong> file here or click to browse</span>
+    </div>
+    <div class="file-name" id="fileName" style="display:none"></div>
+    <button class="preview-toggle" id="previewToggle" style="display:none">Show preview</button>
+    <div class="preview-area" id="previewArea"></div>
+  </div>
+
+  <!-- Options -->
+  <div class="card options">
+    <div>
+      <span class="field-label">Style</span>
+      <select id="styleSelect">
+        <option value="renewcorp">RenewCORP</option>
+        <option value="clockwork">The Clockwork Cloud</option>
+      </select>
+    </div>
+
+    <label class="option">
+      <input type="checkbox" id="tocCheck">
+      Include Table of Contents
+    </label>
+
+    <label class="option">
+      <input type="checkbox" id="coverCheck">
+      Add cover page
+    </label>
+
+    <div class="cover-title-row" id="coverTitleRow">
+      <span class="field-label">Cover title</span>
+      <input type="text" id="coverTitle" placeholder="e.g. Solar Feasibility Study">
+    </div>
+  </div>
+
+  <button class="convert-btn" id="convertBtn" disabled>Convert to DOCX</button>
+  <div class="status" id="status"></div>
+
+<script>
+  const dropZone = document.getElementById("dropZone");
+  const fileInput = document.getElementById("fileInput");
+  const fileNameEl = document.getElementById("fileName");
+  const previewToggle = document.getElementById("previewToggle");
+  const previewArea = document.getElementById("previewArea");
+  const styleSelect = document.getElementById("styleSelect");
+  const tocCheck = document.getElementById("tocCheck");
+  const coverCheck = document.getElementById("coverCheck");
+  const coverTitleRow = document.getElementById("coverTitleRow");
+  const coverTitle = document.getElementById("coverTitle");
+  const convertBtn = document.getElementById("convertBtn");
+  const statusEl = document.getElementById("status");
+
+  let markdownContent = null;
+  let currentFileName = null;
+
+  // ── Drag & drop ──
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropZone.classList.add("drag-over");
+  });
+  dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("drag-over");
+  });
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    const file = e.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files[0]) loadFile(fileInput.files[0]);
+  });
+
+  function loadFile(file) {
+    currentFileName = file.name;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      markdownContent = e.target.result;
+      fileNameEl.textContent = file.name;
+      fileNameEl.style.display = "block";
+      previewToggle.style.display = "inline";
+      previewArea.textContent = markdownContent;
+      convertBtn.disabled = false;
+      setStatus("", "");
+
+      // Auto-fill cover title from first H1 if empty
+      if (!coverTitle.value) {
+        const h1Match = markdownContent.match(/^#\s+(.+)$/m);
+        if (h1Match) coverTitle.value = h1Match[1].trim();
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // ── Preview toggle ──
+  previewToggle.addEventListener("click", () => {
+    const showing = previewArea.classList.toggle("show");
+    previewToggle.textContent = showing ? "Hide preview" : "Show preview";
+  });
+
+  // ── Cover page toggle ──
+  coverCheck.addEventListener("change", () => {
+    coverTitleRow.classList.toggle("visible", coverCheck.checked);
+    if (coverCheck.checked) coverTitle.focus();
+  });
+
+  // ── Convert ──
+  convertBtn.addEventListener("click", async () => {
+    if (!markdownContent) return;
+
+    convertBtn.disabled = true;
+    setStatus("Converting...", "info");
+
+    const body = {
+      markdown: markdownContent,
+      style: styleSelect.value,
+      toc: tocCheck.checked,
+      cover: coverCheck.checked ? (coverTitle.value || null) : null,
+    };
+
+    try {
+      const res = await fetch("/api/convert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `Server error ${res.status}`);
+      }
+
+      const blob = await res.blob();
+      const outputName = currentFileName
+        ? currentFileName.replace(/\.(md|markdown|txt)$/i, ".docx")
+        : "output.docx";
+
+      // Trigger download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = outputName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      const sizeKB = (blob.size / 1024).toFixed(1);
+      setStatus(`Done — ${outputName} (${sizeKB} KB)`, "success");
+    } catch (err) {
+      setStatus(`Error: ${err.message}`, "error");
+    } finally {
+      convertBtn.disabled = false;
+    }
+  });
+
+  function setStatus(msg, type) {
+    statusEl.textContent = msg;
+    statusEl.className = "status" + (msg ? ` show ${type}` : "");
+  }
+
+  // Load styles dynamically (future-proofs for new styles)
+  fetch("/api/styles")
+    .then((r) => r.json())
+    .then((styles) => {
+      styleSelect.innerHTML = "";
+      for (const s of styles) {
+        const opt = document.createElement("option");
+        opt.value = s.key;
+        opt.textContent = s.name;
+        styleSelect.appendChild(opt);
+      }
+    })
+    .catch(() => {/* keep static options */});
+</script>
+</body>
+</html>

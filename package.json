@@ -1,0 +1,18 @@
+{
+  "name": "m2d2",
+  "version": "1.0.0",
+  "description": "Convert Markdown files to styled RenewCORP/Clockwork Cloud Word documents",
+  "main": "convert.js",
+  "bin": {
+    "md2docx": "./convert.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "convert": "node convert.js"
+  },
+  "dependencies": {
+    "docx": "^9.0.0",
+    "express": "^5.1.0",
+    "marked": "^15.0.0"
+  }
+}
